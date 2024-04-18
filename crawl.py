@@ -7,10 +7,16 @@ def is_valid(url, base_url):
     parsed = urlparse(url)
     return bool(parsed.netloc) and parsed.netloc == urlparse(base_url).netloc
 
-def crawl_site(base_url):
+def crawl_site(base_url, file_path):
     visited = set()
     urls = set()
     urls.add(base_url)
+
+    with open(file_path, 'w') as file:
+        while urls:
+            url = urls.pop()
+            if url not in visited:
+                visited.add(url)
 
     while urls:
         url = urls.pop()
