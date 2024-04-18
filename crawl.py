@@ -1,60 +1,74 @@
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
+import sqlite3
+
+def setup_database(db_path):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS urls (
+            url TEXT PRIMARY KEY,
+            visited INTEGER DEFAULT 0
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def add_url_to_database(url, db_path):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR IGNORE INTO urls (url) VALUES (?)', (url,))
+    conn.commit()
+    conn.close()
+
+def mark_url_as_visited(url, db_path):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE urls SET visited = 1 WHERE url = ?', (url,))
+    conn.commit()
+    conn.close()
+
+def get_next_url(db_path):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('SELECT url FROM urls WHERE visited = 0 LIMIT 1')
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else None
 
 def is_valid(url, base_url):
-    """ Check if the URL is a valid internal link """
     parsed = urlparse(url)
     return bool(parsed.netloc) and parsed.netloc == urlparse(base_url).netloc
 
-def crawl_site(base_url, file_path):
-    visited = set()
-    urls = set()
-    urls.add(base_url)
+def crawl_site(base_url, db_path):
+    setup_database(db_path)
+    add_url_to_database(base_url, db_path)
+    url = get_next_url(db_path)
 
-    with open(file_path, 'w') as file:
-        while urls:
-            url = urls.pop()
-            if url not in visited:
-                visited.add(url)
-
-    while urls:
-        url = urls.pop()
+    while url:
         try:
             response = requests.get(url)
             soup = BeautifulSoup(response.text, 'html.parser')
+            mark_url_as_visited(url, db_path)
+
             for link in soup.find_all('a', href=True):
                 full_url = urljoin(url, link['href'])
-                if full_url not in visited and is_valid(full_url, base_url):
-                    visited.add(full_url)
-                    urls.add(full_url)
-                    print(full_url)  # Optional: prints the URL to the console
+                if is_valid(full_url, base_url):
+                    add_url_to_database(full_url, db_path)
+
         except requests.RequestException:
-            continue
+            mark_url_as_visited(url, db_path)  # Mark as visited even if failed to ensure progress
 
-    return visited
-
-def save_urls_to_file(urls, file_path):
-    existing_urls = set()
-    try:
-        with open(file_path, 'r') as file:
-            existing_urls.update(file.read().splitlines())
-    except FileNotFoundError:
-        pass  # File does not exist, will be created during append
-
-    with open(file_path, 'a') as file:
-        for url in sorted(urls):
-            if url not in existing_urls:
-                file.write(url + '\n')
-                existing_urls.add(url)
+        url = get_next_url(db_path)
 
 # Base URL of the site to crawl
-base_url = 'example.com'
+base_url = 'https://community.openstreetmap.org/'
 
-# Start crawling from the base URL and get all encountered URLs
-crawled_urls = crawl_site(base_url)
+# SQLite database file path
+db_path = 'urls.db'
 
-# Save the URLs to a text file
-save_urls_to_file(crawled_urls, 'sitemap.txt')
+# Start crawling from the base URL
+crawl_site(base_url, db_path)
 
-print("Sitemap has been generated and saved to sitemap.txt.")
+print("Crawling has completed or paused. Data saved in database.")
