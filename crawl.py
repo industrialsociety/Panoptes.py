@@ -29,9 +29,18 @@ def crawl_site(base_url):
     return visited
 
 def save_urls_to_file(urls, file_path):
-    with open(file_path, 'w') as file:
+    existing_urls = set()
+    try:
+        with open(file_path, 'r') as file:
+            existing_urls.update(file.read().splitlines())
+    except FileNotFoundError:
+        pass  # File does not exist, will be created during append
+
+    with open(file_path, 'a') as file:
         for url in sorted(urls):
-            file.write(url + '\n')
+            if url not in existing_urls:
+                file.write(url + '\n')
+                existing_urls.add(url)
 
 # Base URL of the site to crawl
 base_url = 'example.com'
